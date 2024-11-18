@@ -1,5 +1,0 @@
-// Main Service
-
-fn main() {
-
-}
