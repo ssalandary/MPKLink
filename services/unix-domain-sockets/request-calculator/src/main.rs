@@ -1,30 +1,40 @@
-use std::os::unix::net::{UnixStream,UnixListener};
+use std::os::unix::net::{UnixStream, UnixListener};
 use std::io::{Write, BufReader, BufRead};
 use std::collections::HashMap;
 use serde_json::Value;
 
-const UNIX_SOCKET_REQUEST: &str = "/tmp/request.sock";
-const UNIX_SOCKET_RESPONSE: &str = "/tmp/response.sock";
+const UNIX_SOCKET: &str = "/tmp/service.sock";
 
-fn setup_sockets() -> Result<(), std::io::Error> {
-    std::fs::remove_file(UNIX_SOCKET_REQUEST).ok();
-    std::fs::remove_file(UNIX_SOCKET_RESPONSE).ok();
-    Ok(())
+// Service 2 Functions
+fn create_socket(path: &str) -> Result<UnixListener, std::io::Error> {
+    match UnixListener::bind(path) {
+        Ok(listener) => {
+            println!("Socket created at path: {}", path);
+            Ok(listener)
+        }
+        Err(e) => {
+            match e.raw_os_error() {
+                Some(48) => {
+                    println!("Socket already exists at path: {}", path);
+                    std::fs::remove_file(path).expect("Failed to remove file");
+                    create_socket(path)
+                }
+                _ => Err(e),
+            }
+        }
+    }
 }
 
-fn recv_request() -> Result<String, std::io::Error> {
-    let listener = UnixListener::bind(UNIX_SOCKET_REQUEST)?;
-    let (stream, _) = listener.accept()?;
+fn recv_request(stream: &UnixStream) -> Result<String, std::io::Error> {
     let mut reader = BufReader::new(stream);
     let mut request = String::new();
     reader.read_line(&mut request)?;
-    Ok(request.trim().to_string())
+    Ok(request)
 }
 
-fn send_response(response: &str) -> Result<(), std::io::Error> {
-    let mut stream = UnixStream::connect(UNIX_SOCKET_RESPONSE)?;
-    writeln!(stream, "{}", response)?;
+fn send_response(mut stream: &UnixStream, response: &str) -> Result<(), std::io::Error> {
     stream.write_all(response.as_bytes())?;
+    stream.write_all(b"\n")?; // Add newline to signal end of message
     Ok(())
 }
 
@@ -55,14 +65,14 @@ fn process_request(request: String) -> String {
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
 
-    // Create sockets
-    setup_sockets().expect("Failed to create sockets");
+    let listener = create_socket(UNIX_SOCKET)?;
+    let (stream, _) = listener.accept()?;
 
     // Process requests in a loop
     loop {
-        let request = recv_request()?;
+        let request = recv_request(&stream)?;
         println!("Received request: {}", request);
         let response = process_request(request);
-        send_response(&response)?;
+        send_response(&stream, &response)?;
     }
 }
