@@ -1,25 +1,17 @@
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use std::io::{Read, BufReader};
-use fs2::FileExt;
 use std::fs::File;
+use nix::fcntl::{Flock, FlockArg};
 
 const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
 const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
 
 // Service 1 Functions
 fn grab_lock() -> Result<File, std::io::Error> {
-    println!("Locking file...");
-    match File::create("/tmp/service.lock") {
-        Ok(file) => {
-            file.lock_exclusive()?;
-            Ok(file)
-        },
-        Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let file = File::open("/tmp/service.lock")?;
-            file.lock_exclusive()?;
-            Ok(file)
-        },
-        Err(e) => Err(e),
+    match File::open("/tmp/service.lock") {
+        Ok(f) => Ok(f),
+        // If the lock file does not exist, create it
+        Err(_) => File::create("/tmp/service.lock"),
     }
 }
 
@@ -57,14 +49,15 @@ fn main() -> Result<(), std::io::Error> {
     let request = r#"{"type": "total", "string": "hello world hello"}"#;
 
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, request.len())?;
-    file.lock_exclusive()?;
+    let lock = Flock::lock(file, FlockArg::LockExclusive).unwrap();
     send_data(&shmem_request, request)?;
-    file.unlock()?;
+    lock.unlock().unwrap();
     // Receive and print the response
     let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 1024)?;
-    file.lock_exclusive()?;
+    let file2 = grab_lock()?;
+    let lock2 = Flock::lock(file2, FlockArg::LockExclusive).unwrap();
     let response = recv_response(&shmem_response)?;
-    file.unlock()?;
+    lock2.unlock().unwrap();
     println!("Received response: {}", response);
 
     // Remove the lock file and shared memory

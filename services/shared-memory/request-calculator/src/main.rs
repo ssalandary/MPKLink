@@ -1,8 +1,8 @@
 use std::io::{Read, BufReader};
 use std::collections::HashMap;
 use serde_json::Value;
-use fs2::FileExt;
 use std::fs::File;
+use nix::fcntl::{Flock, FlockArg};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
@@ -10,18 +10,10 @@ const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
 
 // Service 2 Functions
 fn grab_lock() -> Result<File, std::io::Error> {
-    println!("Locking file...");
-    match File::create("/tmp/service.lock") {
-        Ok(file) => {
-            file.lock_exclusive()?;
-            Ok(file)
-        },
-        Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let file = File::open("/tmp/service.lock")?;
-            file.lock_exclusive()?;
-            Ok(file)
-        },
-        Err(e) => Err(e),
+    match File::open("/tmp/service.lock") {
+        Ok(f) => Ok(f),
+        // If the lock file does not exist, create it
+        Err(_) => File::create("/tmp/service.lock"),
     }
 }
 
@@ -76,15 +68,18 @@ fn process_request(request: String) -> String {
 
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
+
     let file = grab_lock()?;
+
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
-    file.lock_exclusive()?;
+
+    let lock = Flock::lock(file, FlockArg::LockExclusive).unwrap();
     let request = recv_request(&shmem_request)?;
     println!("Received request: {}", request);
     let response = process_request(request);
     let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
     send_response(&shmem_response, &response)?;
-    file.unlock()?;
+    lock.unlock().unwrap();
 
     std::fs::remove_file("/tmp/service.lock")?;
     std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
