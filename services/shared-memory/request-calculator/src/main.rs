@@ -1,13 +1,30 @@
 use std::io::{Read, BufReader};
 use std::collections::HashMap;
 use serde_json::Value;
-
+use fs2::FileExt;
+use std::fs::File;
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
 const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
 
 // Service 2 Functions
+fn grab_lock() -> Result<File, std::io::Error> {
+    println!("Locking file...");
+    match File::create("/tmp/service.lock") {
+        Ok(file) => {
+            file.lock_exclusive()?;
+            Ok(file)
+        },
+        Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let file = File::open("/tmp/service.lock")?;
+            file.lock_exclusive()?;
+            Ok(file)
+        },
+        Err(e) => Err(e),
+    }
+}
+
 fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::io::Error> {
     println!("Creating shared memory...");
     match ShmemConf::new().size(length).flink(flink_name).create() {
@@ -59,25 +76,19 @@ fn process_request(request: String) -> String {
 
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
-
-    let mut shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
-    while !shmem_request.set_owner(true) { /* Spin lock */
-        println!("Waiting for ownership of shared memory");
-    };
-    println!("Received ownership of shared memory");
+    let file = grab_lock()?;
+    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
+    file.lock_exclusive()?;
     let request = recv_request(&shmem_request)?;
-    while !shmem_request.set_owner(false) { /* Spin lock */
-        println!("Transfering ownership...");
-    }
     println!("Received request: {}", request);
     let response = process_request(request);
-    let mut shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
-    while !shmem_response.set_owner(true) { /* Spin lock */
-        println!("Waiting for ownership of shared memory");
-    };
+    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
     send_response(&shmem_response, &response)?;
-    while !shmem_response.set_owner(false) { /* Spin lock */
-        println!("Transfering ownership...");
-    }
+    file.unlock()?;
+
+    std::fs::remove_file("/tmp/service.lock")?;
+    std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
+    std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
+
     Ok(())
 }
