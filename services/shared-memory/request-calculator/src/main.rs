@@ -19,11 +19,11 @@ fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::i
 }
 
 fn recv_request(shmem: &Shmem) -> Result<String, std::io::Error> {
-    let raw_ptr = shmem.as_ptr();
     let mut ready = false;
     let mut request = String::new();
 
     while !ready {
+        let raw_ptr = shmem.as_ptr();
         let reader = unsafe { std::slice::from_raw_parts(raw_ptr, shmem.len()) };
         let mut buf_reader = BufReader::new(reader);
         buf_reader.read_to_string(&mut request)?;
@@ -33,7 +33,7 @@ fn recv_request(shmem: &Shmem) -> Result<String, std::io::Error> {
             ready = true;
         }
     }
-    println!("Received request: {:?}", request);
+    println!("Received request: {:?}", request.replace("\0", ""));
 
     Ok(request[2..].to_string().replace("\0", ""))
 }
@@ -83,7 +83,7 @@ fn process_request(request: String) -> String {
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
 
-    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
+    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 48)?;
     let request = recv_request(&shmem_request)?;
     println!("Received request: {}", request);
     // Process request minus first two bytes
