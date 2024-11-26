@@ -1,8 +1,8 @@
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use std::io::{Read, BufReader};
 
-const SHMEM_REQUEST_FLINK: &str = "/tmp/abc/request.shm";
-const SHMEM_RESPONSE_FLINK: &str = "/tmp/abc/response.shm";
+const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
+const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
 
 // Service 1 Functions
 fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::io::Error> {
@@ -38,12 +38,17 @@ fn main() -> Result<(), std::io::Error> {
     let request = r#"{"type": "total", "string": "hello world hello"}"#;
 
     let mut shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, request.len())?;
+    while !shmem_request.set_owner(true) { /* Spin lock */}
     send_data(&shmem_request, request)?;
-    shmem_request.set_owner(false);
+    while shmem_request.set_owner(false) {
+        println!("Transfering ownership...");
+    }
 
     // Receive and print the response
     let mut shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 1024)?;
-    while shmem_response.set_owner(true) { /* Spin lock */}
+    while !shmem_response.set_owner(true) { /* Spin lock */
+        println!("Transfering ownership...");
+    }
     let response = recv_response(&shmem_response)?;
     println!("Received response: {}", response);
 

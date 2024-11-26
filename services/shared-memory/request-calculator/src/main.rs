@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
-const SHMEM_REQUEST_FLINK: &str = "/tmp/abc/request.shm";
-const SHMEM_RESPONSE_FLINK: &str = "/tmp/abc/response.shm";
+const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
+const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
 
 // Service 2 Functions
 fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::io::Error> {
@@ -61,15 +61,23 @@ fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
 
     let mut shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
-    while shmem_request.set_owner(true) { /* Spin lock */};
+    while !shmem_request.set_owner(true) { /* Spin lock */
+        println!("Waiting for ownership of shared memory");
+    };
     println!("Received ownership of shared memory");
     let request = recv_request(&shmem_request)?;
-    shmem_request.set_owner(false);
+    while !shmem_request.set_owner(false) { /* Spin lock */
+        println!("Transfering ownership...");
+    }
     println!("Received request: {}", request);
     let response = process_request(request);
     let mut shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
-    shmem_response.set_owner(true);
+    while !shmem_response.set_owner(true) { /* Spin lock */
+        println!("Waiting for ownership of shared memory");
+    };
     send_response(&shmem_response, &response)?;
-    shmem_response.set_owner(false);
+    while !shmem_response.set_owner(false) { /* Spin lock */
+        println!("Transfering ownership...");
+    }
     Ok(())
 }
