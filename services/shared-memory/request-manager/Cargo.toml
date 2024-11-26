@@ -1,0 +1,8 @@
+[package]
+name = "request-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nix = "0.29.0"
+shared_memory = "0.12.4"
