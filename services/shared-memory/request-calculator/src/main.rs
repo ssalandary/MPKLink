@@ -73,7 +73,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
 
-    let lock = Flock::lock(file, FlockArg::LockExclusive).unwrap();
+    let lock = Flock::lock(file, FlockArg::LockShared).unwrap();
     let request = recv_request(&shmem_request)?;
     println!("Received request: {}", request);
     let response = process_request(request);

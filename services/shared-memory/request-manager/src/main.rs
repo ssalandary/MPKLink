@@ -49,13 +49,13 @@ fn main() -> Result<(), std::io::Error> {
     let request = r#"{"type": "total", "string": "hello world hello"}"#;
 
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, request.len())?;
-    let lock = Flock::lock(file, FlockArg::LockExclusive).unwrap();
+    let lock = Flock::lock(file, FlockArg::LockShared).unwrap();
     send_data(&shmem_request, request)?;
     lock.unlock().unwrap();
     // Receive and print the response
     let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 1024)?;
     let file2 = grab_lock()?;
-    let lock2 = Flock::lock(file2, FlockArg::LockExclusive).unwrap();
+    let lock2 = Flock::lock(file2, FlockArg::LockShared).unwrap();
     let response = recv_response(&shmem_response)?;
     lock2.unlock().unwrap();
     println!("Received response: {}", response);
