@@ -33,7 +33,6 @@ fn recv_request(shmem: &Shmem) -> Result<String, std::io::Error> {
             ready = true;
         }
     }
-    println!("Received request: {:?}", request.replace("\0", ""));
 
     Ok(request[2..].to_string().replace("\0", ""))
 }

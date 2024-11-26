@@ -35,25 +35,21 @@ fn send_data(shmem: &Shmem, s: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn recv_response() -> Result<String, std::io::Error> {
+fn recv_response(shmem: &Shmem) -> Result<String, std::io::Error> {
     let mut ready = false;
     let mut response = String::new();
     
     while !ready {
         response.clear();
-        let shmem = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
         let raw_ptr = shmem.as_ptr();
         let reader = unsafe { std::slice::from_raw_parts(raw_ptr, shmem.len()) };
         let mut buf_reader = BufReader::new(reader);
         buf_reader.read_to_string(&mut response)?;
-        println!("Response: {:?}", response.replace("\0", ""));
         
         // Read the first two bytes to check if the data is ready
         if response.len() > 2 && response.as_bytes()[0] == 83 && response.as_bytes()[1] == 66 {
             ready = true;
         }
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
     }
 
     Ok(response[2..].to_string())
@@ -68,10 +64,8 @@ fn main() -> Result<(), std::io::Error> {
     send_data(&shmem_request, request)?;
 
     // Receive and print the response
-    let shmem = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
-    // let response = recv_response(&shmem_response)?;
-    println!("shmeme: {:?}", shmem.len());
-    let response = recv_response()?;
+    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
+    let response = recv_response(&shmem_response)?;
     println!("Received response: {}", response);
 
     std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
