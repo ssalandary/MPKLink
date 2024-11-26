@@ -81,9 +81,9 @@ fn main() -> Result<(), std::io::Error> {
     send_response(&shmem_response, &response)?;
     lock.unlock().unwrap();
 
-    std::fs::remove_file("/tmp/service.lock")?;
-    std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
-    std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
+    // std::fs::remove_file("/tmp/service.lock")?;
+    // std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
+    // std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
 
     Ok(())
 }

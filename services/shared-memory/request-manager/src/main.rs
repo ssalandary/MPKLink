@@ -61,9 +61,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("Received response: {}", response);
 
     // Remove the lock file and shared memory
-    std::fs::remove_file("/tmp/service.lock")?;
-    std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
-    std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
+    // std::fs::remove_file("/tmp/service.lock")?;
+    // std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
+    // std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
 
     Ok(())
 }
