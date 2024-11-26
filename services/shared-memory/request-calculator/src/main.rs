@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
-const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
-const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
+const SHMEM_REQUEST_FLINK: &str = "/tmp/abc/request.shm";
+const SHMEM_RESPONSE_FLINK: &str = "/tmp/abc/response.shm";
 
 // Service 2 Functions
 fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::io::Error> {
@@ -28,7 +28,7 @@ fn recv_request(shmem: &Shmem) -> Result<String, std::io::Error> {
 
 fn send_response(shmem: &Shmem, s: &str) -> Result<(), std::io::Error> {
     let raw_ptr = shmem.as_ptr();
-    let writer = unsafe { std::slice::from_raw_parts_mut(raw_ptr, shmem.len()) };
+    let writer = unsafe { std::slice::from_raw_parts_mut(raw_ptr, s.len()) };
     writer.copy_from_slice(s.as_bytes());
     Ok(())
 }
@@ -60,12 +60,16 @@ fn process_request(request: String) -> String {
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
 
-    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
+    let mut shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 1024)?;
+    while shmem_request.set_owner(true) { /* Spin lock */};
+    println!("Received ownership of shared memory");
     let request = recv_request(&shmem_request)?;
+    shmem_request.set_owner(false);
     println!("Received request: {}", request);
     let response = process_request(request);
-    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
+    let mut shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
+    shmem_response.set_owner(true);
     send_response(&shmem_response, &response)?;
-
+    shmem_response.set_owner(false);
     Ok(())
 }
