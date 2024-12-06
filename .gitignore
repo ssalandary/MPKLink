@@ -13,6 +13,9 @@
 *.fdb_latexmk
 *.fls
 *.out
+*.synctex.gz
+
+!sources.bib
 
 .DS_Store
 
