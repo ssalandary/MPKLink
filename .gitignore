@@ -4,3 +4,15 @@
 **/Cargo.lock
 **/*.rs.bk
 *.pdb
+
+*.aux
+*.bbl
+*.bib
+*.blg
+*.log
+*.fdb_latexmk
+*.fls
+*.out
+
+.DS_Store
+
