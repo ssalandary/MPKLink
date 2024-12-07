@@ -36,20 +36,22 @@ fn check_request_mpk(shmem: &Shmem) -> Result<bool, std::io::Error> {
     return Ok(false)
 }
 
-fn recv_request(shmem: &Shmem, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
+fn recv_request(protected_region: &ProtectedRegion<String>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
     let mut ready = false;
     let mut request = String::new();
 
     while !ready {
         ready = check_request_mpk(&mpkshmem).unwrap();
     }
-
-    let raw_ptr = shmem.as_ptr();
-    let reader = unsafe { std::slice::from_raw_parts(raw_ptr, shmem.len()) };
-    let mut buf_reader = BufReader::new(reader);
-    buf_reader.read_to_string(&mut request)?;
     
-    Ok(request.to_string().replace("\0", ""))
+    {
+        // Lock the region
+        let locked_region = protected_region.lock();
+        // Read from the locked region
+        request = locked_region.clone();
+    }
+
+    Ok(request)
 }
 
 fn send_response(shmem: &Shmem, s: &str, mpkshmem: &Shmem) -> Result<(), std::io::Error> {
@@ -103,17 +105,21 @@ fn process_request(request: String) -> String {
     }
 }
 
+
 fn main() -> Result<(), std::io::Error> {
     println!("Starting request-calculator...");
 
-    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 48)?;
-
+    let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 4096)?;
     let shmem_request_mpk = create_shared_memory(SHMEM_REQUESTMPK_FLINK, 1)?; // read only
-    let request = recv_request(&shmem_request, &shmem_request_mpk)?;
+
+    let shared_memory_ptr = shmem_request.as_ptr() as *mut libc::c_void;
+    let pkey = ProtectionKeys::new(false).unwrap();
+    let protected_region = ProtectedRegion::<String>::from_shared_memory(&pkey, shared_memory_ptr, 4096).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let request = recv_request(&protected_region, &shmem_request_mpk)?;
     println!("Received request: {}", request);
-    // Process request minus first two bytes
     let response = process_request(request);
-    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len())?;
+    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 4096)?;
+    
     
     let shmem_response_mpk = create_shared_memory(SHMEM_RESPONSEMPK_FLINK, 1)?; // write to when ready
     send_response(&shmem_response, &response, &shmem_response_mpk)?;

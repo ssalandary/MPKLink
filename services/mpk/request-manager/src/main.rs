@@ -64,7 +64,7 @@ fn check_response_mpk(shmem: &Shmem) -> Result<bool, std::io::Error> {
     return Ok(false)
 }
 
-fn recv_response(shmem: &Shmem, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
+fn recv_response(protected_region: &ProtectedRegion<String>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
     let mut ready = false;
     let mut response = String::new();
     
@@ -72,12 +72,13 @@ fn recv_response(shmem: &Shmem, mpkshmem: &Shmem) -> Result<String, std::io::Err
         ready = check_response_mpk(&mpkshmem).unwrap();
     }
 
-    let raw_ptr = shmem.as_ptr();
-    let reader = unsafe { std::slice::from_raw_parts(raw_ptr, shmem.len()) };
-    let mut buf_reader = BufReader::new(reader);
-    buf_reader.read_to_string(&mut response)?;
-
-    Ok(response.to_string())
+    {
+        // Lock the region
+        let locked_region = protected_region.lock();
+        // Read from the locked region
+        response = locked_region.clone();
+    }
+    Ok(response)
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -92,8 +93,13 @@ fn main() -> Result<(), std::io::Error> {
     send_data(&shmem_request, request, &shmem_request_mpk)?;
 
     // Receive and print the response
-    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
-    let response = recv_response(&shmem_response, &shmem_response_mpk)?;
+    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 4096)?;
+
+    let shared_memory_ptr = shmem_response.as_ptr() as *mut libc::c_void;
+    let pkey = ProtectionKeys::new(false).unwrap();
+    let protected_region = ProtectedRegion::<String>::from_shared_memory(&pkey, shared_memory_ptr, 4096).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let response = recv_response(&protected_region, &shmem_response_mpk)?;
     println!("Received response: {}", response);
 
     std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
