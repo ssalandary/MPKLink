@@ -2,6 +2,7 @@
 
 use std::ops::Deref;
 use std::sync::Arc;
+use std::os::fd::RawFd;
 
 #[cfg(all(target_arch = "x86", not(target_env = "sgx"), target_feature = "sse"))]
 use ::core::arch::x86 as arch;
@@ -93,6 +94,17 @@ impl ProtectionKeys {
         ProtectedRegion::new(self, initial)
     }
 
+    pub fn make_region_fd<T>(
+        self: &Arc<Self>,
+        initial: T,
+        fd: RawFd,
+    ) -> Result<Arc<ProtectedRegion<T>>, ProtectionError>
+    where
+        T: Sized,
+    {
+        ProtectedRegion::new_fd(self, initial, fd)
+    }
+
     /// Whether protection keys were allocated
     pub fn is_empty(&self) -> bool {
         self.handle.is_none()
@@ -149,48 +161,6 @@ pub struct ProtectedRegion<T> {
 impl<T> ProtectedRegion<T> {
     const _ASSERT: () = assert!(std::mem::size_of::<T>() <= PAGE_SIZE);
 
-    //CS 239: New function to create protecter region from shared memory.
-    pub fn from_shared_memory(
-        pkey: &Arc<ProtectionKeys>,
-        shared_memory_ptr: *mut libc::c_void,
-        size: usize,
-    ) -> Result<Arc<Self>, ProtectionError>
-    where
-        T: Sized,
-    {
-        // Ensure size aligns with T and PAGE_SIZE
-        assert!(std::mem::size_of::<T>() <= size);
-        assert!(size % PAGE_SIZE == 0);
-
-        // Adjust protections using pkey_mprotect
-        #[cfg(target_os = "linux")]
-        {
-            let res = unsafe {
-                libc::syscall(
-                    libc::SYS_pkey_mprotect,
-                    shared_memory_ptr as usize,
-                    size,
-                    libc::PROT_READ | libc::PROT_WRITE,
-                    pkey.handle.unwrap_or(-1),
-                )
-            };
-            if res < 0 {
-                return Err(ProtectionError::MProtectFailed(
-                    std::io::Error::last_os_error(),
-                ));
-            }
-        }
-
-        // Disable access after setup
-        pkey.set(PKEY_DISABLE_ACCESS);
-
-        Ok(Arc::new(Self {
-            pkey: pkey.clone(),
-            ptr: shared_memory_ptr,
-            _marker: std::marker::PhantomData::default(),
-        }))
-    }
-
     fn new(pkey: &Arc<ProtectionKeys>, initial: T) -> Result<Arc<Self>, ProtectionError>
     where
         T: Sized,
@@ -246,6 +216,72 @@ impl<T> ProtectedRegion<T> {
 
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
         unsafe { (ptr as *mut T).write(initial) };
+
+        // Disable memory access
+        pkey.set(PKEY_DISABLE_ACCESS);
+
+        Ok(Arc::new(Self {
+            pkey: pkey.clone(),
+            ptr,
+            _marker: std::marker::PhantomData::default(),
+        }))
+    }
+
+    fn new_fd(pkey: &Arc<ProtectionKeys>, initial: T, fd: RawFd) -> Result<Arc<Self>, ProtectionError>
+    where
+        T: Sized,
+    {
+        // SAFETY: all parameters are passed according to
+        // https://man7.org/linux/man-pages/man2/mmap.2.html
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                PAGE_SIZE,
+                libc::PROT_NONE,
+                libc::MAP_SHARED,
+                fd,
+                0,
+            )
+        };
+        if ptr == libc::MAP_FAILED {
+            return Err(ProtectionError::MMapFailed(std::io::Error::last_os_error()));
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let res = unsafe { libc::mprotect(ptr, PAGE_SIZE, libc::PROT_READ | libc::PROT_WRITE) };
+            if res < 0 {
+                return Err(ProtectionError::MProtectFailed(
+                    std::io::Error::last_os_error(),
+                ));
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: it is called with backward capability with mprotect
+            // https://man7.org/linux/man-pages/man2/mprotect.2.html
+            let res = unsafe {
+                libc::syscall(
+                    libc::SYS_pkey_mprotect,
+                    ptr as usize,
+                    PAGE_SIZE,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    pkey.handle.unwrap_or(-1),
+                )
+            };
+            if res < 0 {
+                return Err(ProtectionError::MProtectFailed(
+                    std::io::Error::last_os_error(),
+                ));
+            }
+        }
+
+        // Enable memory access
+        pkey.set(0);
+
+        // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
+        // unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
 
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
