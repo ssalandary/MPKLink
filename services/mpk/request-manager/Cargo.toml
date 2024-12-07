@@ -1,0 +1,11 @@
+[package]
+name = "request-manager"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nix = { version = "0.27.0", features = ["fs"] }
+pkey_mprotect = "0.2.3"
+shared_memory = "0.12.4"
