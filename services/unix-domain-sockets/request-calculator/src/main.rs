@@ -9,13 +9,13 @@ const UNIX_SOCKET: &str = "/tmp/service.sock";
 fn create_socket(path: &str) -> Result<UnixListener, std::io::Error> {
     match UnixListener::bind(path) {
         Ok(listener) => {
-            println!("Socket created at path: {}", path);
+            // println!("Socket created at path: {}", path);
             Ok(listener)
         }
         Err(e) => {
             match e.raw_os_error() {
                 Some(48) => {
-                    println!("Socket already exists at path: {}", path);
+                    // println!("Socket already exists at path: {}", path);
                     std::fs::remove_file(path).expect("Failed to remove file");
                     create_socket(path)
                 }
@@ -63,7 +63,7 @@ fn process_request(request: String) -> String {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    println!("Starting request-calculator...");
+    // println!("Starting request-calculator...");
 
     let listener = create_socket(UNIX_SOCKET)?;
     let (stream, _) = listener.accept()?;
@@ -71,7 +71,7 @@ fn main() -> Result<(), std::io::Error> {
     // Process requests in a loop
     loop {
         let request = recv_request(&stream)?;
-        println!("Received request: {}", request);
+        // println!("Received request: {}", request);
         let response = process_request(request);
         send_response(&stream, &response)?;
     }

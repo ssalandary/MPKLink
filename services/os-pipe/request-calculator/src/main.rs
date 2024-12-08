@@ -15,7 +15,7 @@ fn create_pipe(pipe_path: &str) -> Result<(), nix::Error> {
         Ok(_) => Ok(()), // Successfully created the pipe
         Err(e) if e == nix::Error::from(Errno::EEXIST) => {
             // The pipe already exists; proceed as normal
-            println!("Pipe already exists at {}", pipe_path);
+            // println!("Pipe already exists at {}", pipe_path);
             Ok(())
         }
         Err(e) => Err(e), // Propagate other errors
@@ -71,7 +71,7 @@ fn process_request(request: String) -> String {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    println!("Starting request-calculator...");
+    // println!("Starting request-calculator...");
 
     // Create pipes
     setup_pipes().expect("Failed to create pipes");
@@ -79,7 +79,7 @@ fn main() -> Result<(), std::io::Error> {
     // Process requests in a loop
     loop {
         let request = recv_request()?;
-        println!("Received request: {}", request);
+        // println!("Received request: {}", request);
         let response = process_request(request);
         send_response(&response)?;
     }

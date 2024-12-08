@@ -11,7 +11,7 @@ fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::i
     match ShmemConf::new().size(length).flink(flink_name).create() {
         Ok(m) => Ok(m),
         Err(ShmemError::LinkExists) => {
-            // println!("Opened link...");
+            println!("Opened link...");
             Ok(ShmemConf::new().flink(flink_name).open().unwrap())
         },
         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
@@ -53,7 +53,7 @@ fn recv_response(shmem: &Shmem) -> Result<String, std::io::Error> {
         }
     }
 
-    Ok(response[2..].to_string())
+    Ok(response[2..].to_string().replace("\0", ""))
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -79,12 +79,11 @@ fn main() -> Result<(), std::io::Error> {
     send_data(&shmem_request, request.as_str())?;
 
     // Receive and print the response
-    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
+    while !std::path::Path::new(SHMEM_RESPONSE_FLINK).exists() {}
+    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 1024)?;
+
     let response = recv_response(&shmem_response)?;
     println!("Received response: {}", response);
-
-    std::fs::remove_file(SHMEM_REQUEST_FLINK)?;
-    std::fs::remove_file(SHMEM_RESPONSE_FLINK)?;
 
     Ok(())
 }
