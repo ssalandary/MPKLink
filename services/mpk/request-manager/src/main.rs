@@ -140,36 +140,17 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     
-
-    let addr = unsafe {
-        libc::mmap(
-            ptr::null_mut(),
-            shm_size,
-            PROT_READ | PROT_WRITE,
-            MAP_SHARED,
-            fd,
-            0,
-        )
-    };
-    
-    if addr == libc::MAP_FAILED {
-        return Err(io::Error::last_os_error());
-    }
-    
-    // Read the contents of the shared memory as a string
-    let shared_data: String = unsafe {
-        // Create a byte slice from the raw pointer
-        let data_slice = slice::from_raw_parts(addr as *const u8, shm_size);
-        // Convert it to a Rust string, stopping at the first null byte if needed
-        let null_terminated_data = data_slice.split(|&byte| byte == 0).next().unwrap_or(&[]);
-        String::from_utf8_lossy(null_terminated_data).to_string()
-    };
-    println!("Here without segfault");
     let real_pkey = ProtectionKeys::new(false).unwrap();
-    let real_protected_region = real_pkey.make_region_fd(&shared_data, fd).unwrap();
+    let test = "test string".to_string();
+    let real_protected_region = real_pkey.make_region_fd(&test, fd).unwrap();
 
-    let response = recv_response(&protected_region, &shmem_response_mpk)?;
+    let response = recv_response(&real_protected_region, &shmem_response_mpk)?;
     println!("Received response: {}", response);
+
+    std::fs::remove_file("/dev/shm".to_owned() + SHMEM_REQUEST_FLINK)?;
+    std::fs::remove_file("/dev/shm".to_owned() +  SHMEM_RESPONSE_FLINK)?;
+    std::fs::remove_file("/dev/shm".to_owned()+ SHMEM_REQUESTMPK_FLINK)?;
+    std::fs::remove_file("/dev/shm".to_owned() +  SHMEM_RESPONSEMPK_FLINK)?;
 
     Ok(())
 }

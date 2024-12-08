@@ -280,24 +280,8 @@ impl<T> ProtectedRegion<T> {
         // Enable memory access
         pkey.set(0);
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
-        //     unsafe {
-        //     // Read the current value at the pointer
-        //     let current_value = (ptr as *mut T).read();
-        //     let size = std::mem::size_of::<T>();
-
-        //     let bytes = slice::from_raw_parts(ptr as *const u8, 100);
-
-        //     // Print the raw bytes
-        //     println!("Raw value as bytes: {:?}", bytes);
-        //     // Write the value back to the same location
-        //     (ptr as *mut T).write(initial);
-        //     let new_value = (ptr as *mut T).read();
-        //     let bbytes = slice::from_raw_parts(ptr as *const u8, 100);
-        //     // Print the raw bytes
-        //     println!("Raw value as bytes but after rewrite: {:?}", bbytes);
         // }
-        unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
-
+        unsafe { (ptr as *mut T).write(initial) }; 
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
 
@@ -314,9 +298,10 @@ impl<T> ProtectedRegion<T> {
 
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
         unsafe { 
+            let test = (self.ptr as *mut T);
             (self.ptr as *mut T).write(initial); 
+            let after_test = (self.ptr as *mut T);
         }
-
         // Disable memory access
         self.pkey.set(PKEY_DISABLE_ACCESS);
 
@@ -325,6 +310,7 @@ impl<T> ProtectedRegion<T> {
 
     /// Creates region guard with read-only access to the data
     pub fn lock(&'_ self) -> ProtectedRegionGuard<'_, T> {
+        unsafe { libc::msync(self.ptr, PAGE_SIZE, libc::MS_INVALIDATE) };
         ProtectedRegionGuard::new(self)
     }
 }
