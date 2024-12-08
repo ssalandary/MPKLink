@@ -2,6 +2,9 @@ use std::thread;
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use std::io::{Read, BufReader};
 use std::io;
+use std::env;
+use std::path::Path;
+use std::fs;
 use std::boxed::{Box};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -168,7 +171,25 @@ fn request_manager(s_calc_write_region: Arc<Mutex<Arc<ProtectedRegion<&str>>>>, 
     println!("Starting request-manager...");
     let shmem_request_mpk = create_shared_memory(SHMEM_REQUESTMPK_FLINK, 1)?;
     let shmem_response_mpk = create_shared_memory(SHMEM_RESPONSEMPK_FLINK, 1)?;
-    let request = r#"{"type": "counts", "string": "hello world hello test"}"#;
+
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let file_path = &args[1];
+    if !Path::new(file_path).exists() {
+        eprintln!("File does not exist: {}", file_path);
+        std::process::exit(1);
+    }
+
+    // Read file contents
+    let mut contents = fs::read_to_string(file_path)?;
+    contents = contents.replace('\n', " ");
+
+    // Create the request in the format {"type": "total", "string": "<file contents>"}
+    let request = r#"{"type": "total", "string": ""#.to_string() + &contents + r#""}"#;
 
     send_data(s_man_write_region, &request, &shmem_request_mpk)?;
 
