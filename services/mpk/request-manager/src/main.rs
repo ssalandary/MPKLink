@@ -1,9 +1,11 @@
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use libc::{ftruncate, shm_open};
-use libc::{O_RDWR, O_CREAT, S_IRUSR, S_IWUSR, S_IRGRP, S_IWGRP};
+use libc::{O_RDWR, O_CREAT, S_IRUSR, S_IWUSR, S_IRGRP, S_IWGRP, MAP_SHARED, PROT_READ, PROT_WRITE};
 use std::io::{Read, BufReader};
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use std::io;
+use std::ptr;
+use std::slice;
 
 use pkey_mprotect::*;
 
@@ -69,7 +71,7 @@ fn check_response_mpk(shmem: &Shmem) -> Result<bool, std::io::Error> {
     return Ok(false)
 }
 
-fn recv_response(protected_region: &ProtectedRegion<&str>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
+fn recv_response(protected_region: &ProtectedRegion<&String>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
     let mut ready = false;
     let mut response = String::new();
     
@@ -121,8 +123,32 @@ fn main() -> Result<(), std::io::Error> {
         return Err(io::Error::last_os_error());
     }
 
-    let pkey = ProtectionKeys::new(true).unwrap();
-    let protected_region = pkey.make_region_fd("test string", fd).unwrap();
+    let addr = unsafe {
+        libc::mmap(
+            ptr::null_mut(),
+            shm_size,
+            PROT_READ | PROT_WRITE,
+            MAP_SHARED,
+            fd,
+            0,
+        )
+    };
+    
+    if addr == libc::MAP_FAILED {
+        return Err(io::Error::last_os_error());
+    }
+    
+    // Read the contents of the shared memory as a string
+    let shared_data: String = unsafe {
+        // Create a byte slice from the raw pointer
+        let data_slice = slice::from_raw_parts(addr as *const u8, shm_size);
+        // Convert it to a Rust string, stopping at the first null byte if needed
+        let null_terminated_data = data_slice.split(|&byte| byte == 0).next().unwrap_or(&[]);
+        String::from_utf8_lossy(null_terminated_data).to_string()
+    };
+
+    let pkey = ProtectionKeys::new(false).unwrap();
+    let protected_region = pkey.make_region_fd(&shared_data, fd).unwrap();
 
     let response = recv_response(&protected_region, &shmem_response_mpk)?;
     println!("Received response: {}", response);

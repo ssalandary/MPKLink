@@ -216,7 +216,6 @@ impl<T> ProtectedRegion<T> {
 
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
         unsafe { (ptr as *mut T).write(initial) };
-
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
 
@@ -281,7 +280,7 @@ impl<T> ProtectedRegion<T> {
         pkey.set(0);
 
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
-        // unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
+        unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
 
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
