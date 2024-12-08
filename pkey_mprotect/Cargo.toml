@@ -1,0 +1,16 @@
+[package]
+name = "pkey_mprotect"
+description = "Typed `pkey_mprotect` wrapper"
+version = "0.2.3"
+edition = "2021"
+rust-version = "1.59"
+repository = "https://github.com/Rexagon/pkey_mprotect"
+keywords = ["pkey_mprotect", "mprotect"]
+categories = ["memory-management"]
+include = ["src/**/*.rs", "README.md", "LICENSE"]
+license-file = "./LICENSE"
+
+[dependencies]
+libc = "0.2"
+log = "0.4"
+thiserror = "1.0"
