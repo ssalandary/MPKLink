@@ -42,7 +42,7 @@ fn check_request_mpk(shmem: &Shmem) -> Result<bool, std::io::Error> {
     return Ok(false)
 }
 
-fn recv_request(protected_region: &ProtectedRegion<&str>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
+fn recv_request(protected_region: &ProtectedRegion<&String>, mpkshmem: &Shmem) -> Result<String, std::io::Error> {
     let mut ready = false;
     let mut request = String::new();
 
@@ -60,9 +60,7 @@ fn recv_request(protected_region: &ProtectedRegion<&str>, mpkshmem: &Shmem) -> R
     Ok(request)
 }
 
-fn send_response(shmem: &Shmem, s: &str, mpkshmem: &Shmem) -> Result<(), std::io::Error> {
-    let raw_ptr = shmem.as_ptr();
-    let writer = unsafe { std::slice::from_raw_parts_mut(raw_ptr, s.len()) };
+fn send_response(protected_region: &ProtectedRegion<&String>, s: &String, mpkshmem: &Shmem) -> Result<(), std::io::Error> {
     // write "N" to mpkshmem to indicate not ready
     let mpk_raw_ptr = mpkshmem.as_ptr();
     let mpk_writer = unsafe { std::slice::from_raw_parts_mut(mpk_raw_ptr, 1) };
@@ -70,12 +68,7 @@ fn send_response(shmem: &Shmem, s: &str, mpkshmem: &Shmem) -> Result<(), std::io
     mpk_writer.copy_from_slice(&metadata);
 
     // Write data
-    let body = s.as_bytes() as &[u8];
-    let data = body;
-    println!("Data: {:?}", data);
-
-    // Copy the data into the shared memory
-    writer.copy_from_slice(&data);
+    protected_region.modify(s);
 
     // write "D" to mpkshmem to indicate ready.
     let new_metadata = [68] as [u8; 1];
@@ -140,16 +133,42 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     let pkey = ProtectionKeys::new(false).unwrap();
-    let protected_region = pkey.make_region_fd("test string", fd).unwrap();
+    let test = "test string".to_string();
+    let protected_region = pkey.make_region_fd(&test, fd).unwrap();
     
     let request = recv_request(&protected_region, &shmem_request_mpk)?;
     println!("Received request: {}", request);
     let response = process_request(request);
-    let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 4096)?;
+
+    // fix response shenanigans
+
+    let resp_shm_name = CString::new(SHMEM_RESPONSE_FLINK).expect("CString::new failed");
+
+    // Create and open the shared memory object
+    let ffd = unsafe {
+        shm_open(
+            resp_shm_name.as_ptr(),
+            O_CREAT | O_RDWR,
+            S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP,
+        )
+    };
+
+    if ffd == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    
+    // Resize the shared memory segment
+    let res = unsafe { ftruncate(ffd, shm_size as libc::off_t) };
+    if res == -1 {
+        return Err(io::Error::last_os_error());
+    }
+
+    let new_pkey = ProtectionKeys::new(false).unwrap();
+    let new_protected_region = pkey.make_region_fd(&response, ffd).unwrap();
     
     
     let shmem_response_mpk = create_shared_memory(SHMEM_RESPONSEMPK_FLINK, 1)?; // write to when ready
-    send_response(&shmem_response, &response, &shmem_response_mpk)?;
+    send_response(&new_protected_region, &response, &shmem_response_mpk)?;
 
     Ok(())
 }

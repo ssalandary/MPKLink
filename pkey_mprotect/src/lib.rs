@@ -2,6 +2,7 @@
 
 use std::ops::Deref;
 use std::sync::Arc;
+use std::slice;
 use std::os::fd::RawFd;
 
 #[cfg(all(target_arch = "x86", not(target_env = "sgx"), target_feature = "sse"))]
@@ -216,7 +217,6 @@ impl<T> ProtectedRegion<T> {
 
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
         unsafe { (ptr as *mut T).write(initial) };
-
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
 
@@ -279,9 +279,24 @@ impl<T> ProtectedRegion<T> {
 
         // Enable memory access
         pkey.set(0);
-
         // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
-        // unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
+        //     unsafe {
+        //     // Read the current value at the pointer
+        //     let current_value = (ptr as *mut T).read();
+        //     let size = std::mem::size_of::<T>();
+
+        //     let bytes = slice::from_raw_parts(ptr as *const u8, 100);
+
+        //     // Print the raw bytes
+        //     println!("Raw value as bytes: {:?}", bytes);
+        //     // Write the value back to the same location
+        //     (ptr as *mut T).write(initial);
+        //     let new_value = (ptr as *mut T).read();
+        //     let bbytes = slice::from_raw_parts(ptr as *const u8, 100);
+        //     // Print the raw bytes
+        //     println!("Raw value as bytes but after rewrite: {:?}", bbytes);
+        // }
+        unsafe { (ptr as *mut T).write(initial) }; // GET RID OF INITIAL WRITE
 
         // Disable memory access
         pkey.set(PKEY_DISABLE_ACCESS);
@@ -291,6 +306,21 @@ impl<T> ProtectedRegion<T> {
             ptr,
             _marker: std::marker::PhantomData::default(),
         }))
+    }
+
+    pub fn modify(&self, initial: T) -> Result<(), ProtectionError> {
+        // Enable memory access
+        self.pkey.set(0);
+
+        // SAFETY: ptr is always aligned to PAGE_SIZE (4KB) and not null
+        unsafe { 
+            (self.ptr as *mut T).write(initial); 
+        }
+
+        // Disable memory access
+        self.pkey.set(PKEY_DISABLE_ACCESS);
+
+        Ok(())
     }
 
     /// Creates region guard with read-only access to the data
