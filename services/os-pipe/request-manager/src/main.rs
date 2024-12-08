@@ -1,3 +1,4 @@
+use std::env;
 use std::io;
 use std::io::{Write, BufRead, BufReader};
 use std::fs::OpenOptions;
@@ -14,7 +15,7 @@ fn create_pipe(pipe_path: &str) -> Result<(), nix::Error> {
         Ok(_) => Ok(()), // Successfully created the pipe
         Err(e) if e == nix::Error::from(Errno::EEXIST) => {
             // The pipe already exists; proceed as normal
-            println!("Pipe already exists at {}", pipe_path);
+            // println!("Pipe already exists at {}", pipe_path);
             Ok(())
         }
         Err(e) => Err(e), // Propagate other errors
@@ -46,14 +47,29 @@ fn recv_response() -> Result<String, std::io::Error> {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    println!("Starting request-manager...");
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let file = &args[1];
+    if !std::path::Path::new(file).exists() {
+        eprintln!("File does not exist: {}", file);
+        std::process::exit(1);
+    }
+
+    let contents = std::fs::read_to_string(file)?;
+
+    // println!("Starting request-manager...");
 
     // Create pipes
     setup_pipes().expect("Failed to create pipes");
 
     // Send a request
-    let request = r#"{"type": "total", "string": "hello world hello"}"#;
-    send_data(request)?;
+    let request = r#"{"type": "total", "string": ""#.to_string() + &contents + r#""}"#;
+    // println!("Sending request: {}", request);
+    send_data(request.as_str())?;
 
     // Receive and print the response
     let response = recv_response()?;

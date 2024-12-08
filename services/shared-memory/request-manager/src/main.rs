@@ -1,5 +1,6 @@
-use shared_memory::{Shmem, ShmemConf, ShmemError};
+use std::env;
 use std::io::{Read, BufReader};
+use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 const SHMEM_REQUEST_FLINK: &str = "/tmp/request.shm";
 const SHMEM_RESPONSE_FLINK: &str = "/tmp/response.shm";
@@ -10,7 +11,7 @@ fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::i
     match ShmemConf::new().size(length).flink(flink_name).create() {
         Ok(m) => Ok(m),
         Err(ShmemError::LinkExists) => {
-            println!("Opened link...");
+            // println!("Opened link...");
             Ok(ShmemConf::new().flink(flink_name).open().unwrap())
         },
         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
@@ -25,12 +26,12 @@ fn send_data(shmem: &Shmem, s: &str) -> Result<(), std::io::Error> {
     let metadata = [83, 66] as [u8; 2];
     let body = s.as_bytes() as &[u8];
     let data = [&metadata[..], &body].concat();
-    println!("Data: {:?}", data);
+    // println!("Data: {:?}", data);
 
     // Copy the data into the shared memory
     writer.copy_from_slice(&data);
 
-    println!("Sent request: {:?}", s);
+    // println!("Sent request: {:?}", s);
 
     Ok(())
 }
@@ -56,12 +57,26 @@ fn recv_response(shmem: &Shmem) -> Result<String, std::io::Error> {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    println!("Starting request-manager...");
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let file = &args[1];
+    if !std::path::Path::new(file).exists() {
+        eprintln!("File does not exist: {}", file);
+        std::process::exit(1);
+    }
+
+    let contents = std::fs::read_to_string(file)?;
+
+    // println!("Starting request-manager...");
 
     // Send a request
-    let request = r#"{"type": "total", "string": "hello world hello"}"#;
+    let request = r#"{"type": "total", "string": ""#.to_string() + &contents + r#""}"#;
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, request.len())?;
-    send_data(&shmem_request, request)?;
+    send_data(&shmem_request, request.as_str())?;
 
     // Receive and print the response
     let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, 48)?;
