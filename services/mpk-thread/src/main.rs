@@ -193,7 +193,12 @@ fn request_manager(s_calc_write_region: Arc<Mutex<Arc<ProtectedRegion<&str>>>>, 
 
     send_data(s_man_write_region, &request, &shmem_request_mpk)?;
 
-    let response = recv_response(s_calc_write_region, &shmem_response_mpk)?;
+    let mut response = recv_response(s_calc_write_region, &shmem_response_mpk)?;
+    if let Some(pos) = response.find("   ") {
+        response = response[pos + 3..].to_string();
+    }
+    response = response.trim_start().to_string();
+    
     println!("Received response: {}", response);
 
     Ok(())
@@ -206,7 +211,9 @@ fn request_calculator(s_calc_write_region: Arc<Mutex<Arc<ProtectedRegion<&str>>>
     
     let request = recv_request(s_man_write_region, &shmem_request_mpk)?;
     println!("Received request: {}", request);
-    let response = process_request(request);
+    let mut response = process_request(request);
+
+    response = format!("{:20}{}", "", response);  // the front is corrupted so if i add some spaces, we are good
 
     send_response(s_calc_write_region, &response, &shmem_response_mpk)?;
 
