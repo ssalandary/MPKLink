@@ -11,7 +11,7 @@ fn create_shared_memory(flink_name: &str, length: usize) -> Result<Shmem, std::i
     match ShmemConf::new().size(length).flink(flink_name).create() {
         Ok(m) => Ok(m),
         Err(ShmemError::LinkExists) => {
-            println!("Opened link...");
+            // println!("Opened link...");
             Ok(ShmemConf::new().flink(flink_name).open().unwrap())
         },
         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
@@ -45,17 +45,17 @@ fn send_response(shmem: &Shmem, s: &str) -> Result<(), std::io::Error> {
     let metadata = [83, 66] as [u8; 2];
     let body = s.as_bytes() as &[u8];
     let data = [&metadata[..], &body].concat();
-    println!("Data: {:?}", data);
+    // println!("Data: {:?}", data);
 
     // Copy the data into the shared memory
     writer.copy_from_slice(&data);
 
-    println!("Sent response: {:?}", s);
+    // println!("Sent response: {:?}", s);
     Ok(())
 }
 
 fn process_request(request: String) -> String {
-    println!("Processing request: {}", request);
+    // println!("Processing request: {}", request);
     match serde_json::from_str::<Value>(&request) {
         Ok(parsed) => {
             let req_type = parsed["type"].as_str().unwrap_or_default();
@@ -80,12 +80,12 @@ fn process_request(request: String) -> String {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    println!("Starting request-calculator...");
+    // println!("Starting request-calculator...");
 
     while !std::path::Path::new(SHMEM_REQUEST_FLINK).exists() {}
     let shmem_request = create_shared_memory(SHMEM_REQUEST_FLINK, 48)?;
     let request = recv_request(&shmem_request)?;
-    println!("Received request: {}", request);
+    // println!("Received request: {}", request);
     // Process request minus first two bytes
     let response = process_request(request);
     let shmem_response = create_shared_memory(SHMEM_RESPONSE_FLINK, response.len() + 5)?;
