@@ -31,18 +31,22 @@ def benchmark(service: str, test_file: str) -> tuple[int, float]:
     )
     manager_service = os.path.join(os.getcwd(), "services", service, "request-manager")
 
+    if service == "mpk-thread":
+        manager_service = os.path.join(os.getcwd(), "services", service)
+
     log("[*] ==================================================")
     log("[*] START")
     log(f"[*] INFO: Running benchmark for {service} service, {test_file} test...")
 
     # Run cargo clean to remove any previous build artifacts
     log("[*] INFO: Cleaning up previous build artifacts...")
-    subprocess.call(
-        ["cargo", "clean", "--manifest-path", f"{calculator_service}/Cargo.toml"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    if service != "mpk-thread":
+        subprocess.call(
+            ["cargo", "clean", "--manifest-path", f"{calculator_service}/Cargo.toml"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     subprocess.call(
         ["cargo", "clean", "--manifest-path", f"{manager_service}/Cargo.toml"],
         stdin=subprocess.DEVNULL,
@@ -73,18 +77,19 @@ def benchmark(service: str, test_file: str) -> tuple[int, float]:
 
     # Build the calculator and manager services
     log("[*] INFO: Building calculator and manager services...")
-    subprocess.call(
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--manifest-path",
-            f"{calculator_service}/Cargo.toml",
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    if service != "mpk-thread":
+        subprocess.call(
+            [
+                "cargo",
+                "build",
+                "--release",
+                "--manifest-path",
+                f"{calculator_service}/Cargo.toml",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     subprocess.call(
         [
             "cargo",
@@ -99,37 +104,52 @@ def benchmark(service: str, test_file: str) -> tuple[int, float]:
     )
 
     # Start the calulator "server"
-    log("[*] INFO: Starting calculator server...")
-    p_calculator = subprocess.Popen(
-        [f"{calculator_service}/target/release/request-calculator", test_file],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(2)
+    if service != "mpk-thread":
+        log("[*] INFO: Starting calculator server...")
+        p_calculator = subprocess.Popen(
+            [f"{calculator_service}/target/release/request-calculator", test_file],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(2)
 
     # Start the timer
     start = time.time()
 
     # Start the manager "client"
-    log("[*] INFO: Starting manager client...")
-    p_manager = subprocess.Popen(
-        [f"{manager_service}/target/release/request-manager", test_file],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    stdout = p_manager.communicate()[0].decode("utf-8")
+    if service != "mpk-thread":
+        log("[*] INFO: Starting manager client...")
+        p_manager = subprocess.Popen(
+            [f"{manager_service}/target/release/request-manager", test_file],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        stdout = p_manager.communicate()[0].decode("utf-8")
+    else:
+        log("[*] INFO: Starting manager client...")
+        p_manager = subprocess.Popen(
+            [f"{manager_service}/target/release/mpk-thread", test_file],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        stdout = p_manager.communicate()[0].decode("utf-8")
 
     end = time.time()
 
     # Kill the calculator "server"
-    log("[*] INFO: Killing calculator server...")
-    p_calculator.kill()
+    if service != "mpk-thread":
+        log("[*] INFO: Killing calculator server...")
+        p_calculator.kill()
 
     log("[*] END")
-
-    count = int(stdout.strip().split(": ")[1])
+    count = 0
+    if service == "mpk-thread": 
+        count = int(stdout.strip().rsplit(": ", 1)[-1].strip('"'))
+    else:
+        count = int(stdout.strip().split(": ")[1])
 
     log("[*] RESULTS: {} seconds".format(end - start))
     log("[*] RESULTS: {} words".format(count))
@@ -140,7 +160,7 @@ def benchmark(service: str, test_file: str) -> tuple[int, float]:
 # TODO: Add averaging of times for each test count. Running each test N times.
 N = 5
 
-SERVICES = ["os-pipe", "unix-domain-sockets", "shared-memory"]
+SERVICES = ["os-pipe", "unix-domain-sockets", "shared-memory", "mpk-thread"]
 TESTS = sorted([test for test in os.listdir("tests") if test.endswith(".in")])
 BENCHMARK_DIR = os.path.join(
     os.getcwd(), "benchmark", datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

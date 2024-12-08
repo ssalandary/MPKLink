@@ -222,7 +222,24 @@ fn request_calculator(s_calc_write_region: Arc<Mutex<Arc<ProtectedRegion<&str>>>
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let testa = Box::new("test string".to_string());
-    let request = Box::new(r#"{"type": "total", "string": "hello world hello"}"#.to_string());
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let file_path = &args[1];
+    if !Path::new(file_path).exists() {
+        eprintln!("File does not exist: {}", file_path);
+        std::process::exit(1);
+    }
+
+    // Read file contents
+    let mut contents = fs::read_to_string(file_path)?;
+    contents = contents.replace('\n', " ");
+
+    // Create the request in the format {"type": "total", "string": "<file contents>"}
+    let request = Box::new(r#"{"type": "total", "string": ""#.to_string() + &contents + r#""}"#);
     let testa_static: &'static str = Box::leak(testa);
     let request_static: &'static str = Box::leak(request);
 
