@@ -39,8 +39,7 @@ Intel Memory Protection Keys (MPK) provide a hardware-backed solution to these p
 In response to these challenges, we propose MPKLink, a system that enables performant and trustworthy communication between microservices hosted on the same machine.
 MPKLink provides a framework for making small modifications to microservice orchestration software like Docker Compose and a gRPC compiler, allowing microservices to communicate securely via Intel MPK with minimal changes to their existing codebase.
 To assess its effectiveness, we benchmarked various inter-process communication (IPC) primitives, including OS pipes, Unix domain sockets, shared memory, and Intel MPK, comparing their performance and highlighting the advantages of using Intel MPK for high-performance, secure inter-service communication.
-
-TODO: Add results and conclusion.
+After evaluating MPKLink against communication methods such as OS pipes, Unix domain sockets, and shared memory, we concluded that while it performs comparably to or better than at least one of these IPC methods for smaller-scale communications, it faces challenges with larger reads and writes. Although MPKLink is consistently slower than a bare shared memory implementation, it offers stronger isolation guarantees, making it more suitable for threat models requiring higher security. We believe that the efficiency of MPKLink can be further improved by optimizing shared memory spinlocks to use atomic variables, allowing each thread to modify its Protection Key Rights for User pages (PKRU) register at appropriate times. Additionally, identifying and eliminating unnecessary memory copying could reduce overhead. While these enhancements may not enable MPKLink to outperform Unix domain sockets or OS pipes for large data transfers, they present promising research directions for applications with smaller-scale or high-frequency inter-service communication. By addressing these limitations, MPKLink has the potential to become a more versatile and efficient solution for secure microservice communication.
 \end{abstract}
 
 
@@ -230,21 +229,69 @@ Named pipes, created via \textbf{mkfifo}, were used to facilitate this communica
 Unix Domain Sockets were another method of IPC, and we created one socket for bidirectional communication.
 Sockets are blocking by nature, which introduces potential delays in communication but also ensures that data is reliably received before processing begins.
 For shared memory, we created two separate memory regions, as shared memory is not inherently blocking like sockets or pipes, which introduces the risk of race conditions.
-To mitigate these issues, we implemented a polling mechanism where the server continuously checks the shared memory buffer for metadata indicating that the client is ready to read or write.
+To mitigate these issues, we implemented a polling mechanism where the server continuously checks the shared memory buffer for metadata indicating that the client is ready to read or write.  
+We encountered some issues with the MPK implementation. Initially the two services existed as entirely separate processes and communicated via file backed mmapped shared memory.  However, this approach led to segmentation faults and it was extremely difficult to manage memory between the two processes while avoiding corruption and race conditions. Thus, we chose to transition to a thread-based approach, assuming there exists some master process capable of orchestrating the two microservices as individual threads.  This allowed the memory tagged with protection keys to be mmapped normally to a single process and minimized chances of corruption.
 
 The benchmarking task was designed around a distributed word count problem, where Service 1 (the client) reads data from a file, serializes a request, and sends it to Service 2 (the server).
 The server then deserializes the request, performs a word count on the file, and sends the result back to the client.
 The client then receives and writes the results to the standard output.
 We used this task to evaluate the performance and reliability of the IPC methods under various conditions.
-However, we encountered some issues with the MPK implementation, which we are still working to resolve.
 These challenges are related to the synchronization of memory protection keys across services and ensuring that the protection mechanisms do not interfere with the performance of the communication, but we are continuing to refine the system and the benchmark setup.
 
 \section{Results}
-TODO: Add results here.
+We created and benchmarked four sets of microservices on a C6420 Cloudlab Node. This is an Intel Skylake-based server with 32 cores and two disks running Two Sixteen-core Intel Xeon Gold 6142 CPUs at 2.6 GHz, 384GB ECC DDR4-2666 Memory, Two Seagate 1TB 7200 RPM 6G SATA HDs, and a Dual-port Intel X710 10Gbe NIC.  
+For each set of microservices, we generated test cases consisting of between 100 and 100000000 words to count and kept track of the time it took each set of microservices to send, compute, and receive a complete "count words" request.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.3\textwidth]{../benchmark/2024-12-08_17-19-30/mpk-thread.png}
+    \caption{Benchmarking MPKLink}
+\end{figure}
+
+As shown in Figure 1, MPKLink performs well for small inter-service communications but demonstrates an exponential increase in processing time when handling larger payloads, particularly between 10 million and 100 million words. This sharp rise in latency makes MPKLink, in its current form, infeasible for large bulk communications.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.3\textwidth]{../benchmark/2024-12-08_17-19-30/overview.png}
+    \caption{Overview of all results for all four IPC methods}
+\end{figure}
+
+Figure 2 provides a comparative overview of MPKLink and the other three IPC communication methods. While MPKLink achieves similar performance to its counterparts, it is not faster than any of them across the range of word counts tested.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.3\textwidth]{../benchmark/2024-12-08_17-19-30/overview2.png}
+    \caption{Overview of small results for all four IPC methods}
+\end{figure}
+
+In Figure 3, we focus on smaller inter-service communications (10000 words or fewer). Here, MPKLink outperforms OS pipes by approximately 0.0005 seconds (for small communications of 100 words or fewer) but still falls behind shared memory and UNIX domain sockets. However, MPKLink offers stronger isolation guarantees than shared memory, making it a suitable choice in scenarios where security and isolation are critical. Additionally, the architecture of MPKLink—sharing memory between two services running on individual threads via an mmap-based region—allows it to handle larger communications effectively. In contrast, the baseline shared memory approach cannot handle requests of 100,000 words or more.
+
+\begin{table}[h!]
+    \centering
+    \label{tab:ipc-best}
+    \begin{tabular}{|r|l|l|}
+        \toprule
+        \hline
+        \textbf{Word Count} & \textbf{MPKLink (s)} & \textbf{Best Other (s)} \\
+        \midrule
+        100       & 0.00203        & 0.00166 (Shared Memory) \\
+        1,000     & 0.00269        & 0.00168 (Unix Sockets) \\
+        10,000    & 0.00364        & 0.00154 (Shared Memory) \\
+        100,000   & 0.01536        & 0.00660 (OS Pipe) \\
+        1,000,000 & 0.18374        & 0.04571 (Unix Sockets) \\
+        10,000,000 & 1.40530       & 0.48885 (Unix Sockets) \\
+        100,000,000 & 14.42533     & 5.10027 (Unix Sockets) \\
+        \hline
+        \bottomrule
+    \end{tabular}
+    \caption{Comparison of MPKLink and Best-Performing IPC}
+\end{table}
+
+Finally, we provide a side-by-side comparison of MPKLink with the best-performing IPC method for each word count. While MPKLink shows competitive performance for small payloads, it is consistently slower than the best-performing alternatives, especially as the word count increases.
+
 
 \section{Related Work}
 Previous research involving Intel Memory Protection Keys (MPK) has primarily focused on memory protection at rest, addressing the isolation and integrity of data within a single process rather than for inter-process communication.
-Two notable works in this area are \textbf{ERIM} and \textbf{Hodor}, which combine MPK with binary introspection and hardware watchpoints to enforce intra-process isolation.
+Two notable works in this area are \textbf{ERIM}\cite{vahldiek2019erim} and \textbf{Hodor}\cite{hedayati2019hodor}, which combine MPK with binary introspection and hardware watchpoints to enforce intra-process isolation.
 These systems are designed to protect sensitive data by dynamically adjusting memory access rights within a process.
 While they provide significant improvements in security by isolating memory regions, their focus is on safeguarding data at rest, such as protecting static memory segments or mitigating potential attacks on individual processes.
 These approaches do not extend to managing data in transit between processes, which is the focus of our work with MPKLink.
@@ -254,8 +301,6 @@ While studies such as \textbf{Performance Characterization of Communication Prot
 These studies focus on optimizing communication mechanisms and identifying performance bottlenecks in microservices, but they do not explore the benefits of shared memory communication with fine-grained access control provided by MPK.
 Our work builds on these findings by proposing a practical and secure framework for using MPK to protect memory regions used for inter-microservice communication, offering both performance gains and enhanced security guarantees.
 
-% Temporarily add citation to surpress LaTeX warning.
-\cite{waldspurger02}
 
 %-------------------------------------------------------------------------------
 \section*{Acknowledgments}
